@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simplenote v3 — Moderní Design</title>
+  <!-- Tailwind CSS CDN - pro moderní a responzivní design -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Nastavení konfigurace Tailwindu -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            // Použijeme čistý, moderní font Inter
+            sans: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            // Tmavá barva pro hlavní text a hranice
+            'note-dark': '#1f2937', // Gray 800
+            // Barva aktivního stavu v menu
+            'note-active': '#f3f4f6', // Gray 100 - Jemné pozadí
+            // Tmavší pozadí pro TopBar
+            'note-topbar': '#111827', // Gray 900
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Vlastní styly pro lepší vykreslení Markdownu uvnitř obsahu (tailwind-prose-like) -->
+  <style>
+    /* Styly pro scrollbar pro estetiku */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px; 
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background-color: #d1d5db; 
+      border-radius: 3px; /* Zaoblený scrollbar */
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    /* Základní styly pro Markdown - pro čistou čitelnost */
+    .prose-content h1, .prose-content h2, .prose-content h3 {
+      margin-top: 1.5em; 
+      margin-bottom: 0.5em;
+      font-weight: 700;
+      line-height: 1.25;
+      color: #1f2937; 
+    }
+    .prose-content h1 { font-size: 2.25rem; }
+    .prose-content h2 { font-size: 1.875rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.3em; }
+    .prose-content h3 { font-size: 1.5rem; }
+
+    .prose-content p {
+      margin-bottom: 1em; 
+      line-height: 1.75;
+    }
+    .prose-content ul, .prose-content ol {
+      margin-bottom: 1em;
+      padding-left: 1.5em; 
+    }
+    .prose-content li {
+        margin-bottom: 0.5em;
+    }
+    .prose-content blockquote {
+        border-left: 4px solid #9ca3af; 
+        padding-left: 1em;
+        margin-left: 0;
+        margin-top: 1em;
+        margin-bottom: 1em;
+        color: #4b5563; 
+        font-style: italic;
+        background-color: #f9fafb; /* Velmi jemné pozadí pro blockquote */
+        padding: 0.75rem;
+        border-radius: 0.5rem; /* Zaoblený blockquote */
+    }
+    .prose-content code {
+        background-color: #f3f4f6; 
+        padding: 0.2em 0.4em;
+        border-radius: 0.25rem; /* Zaoblený kód */
+        font-size: 0.85em;
+        color: #b91c1c; 
+    }
+    .prose-content pre {
+        background-color: #1f2937; 
+        color: white;
+        padding: 1em;
+        border-radius: 0.5rem; /* Zaoblený blok kódu */
+        overflow-x: auto;
+    }
+    .prose-content pre code {
+        background: none;
+        padding: 0;
+        color: white;
+        font-size: 0.9em;
+    }
+
+    .prose-content a {
+      color: #2563eb;
+      text-decoration: none;
+    }
+    .prose-content a:hover {
+      text-decoration: underline;
+    }
+    .prose-content img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 0.5rem; /* Zaoblený obrázek */
+      margin-top: 1.5em;
+      margin-bottom: 1.5em;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06); /* Jemný stín pro obrázky */
+    }
+    
+    /* Aktivní stav - jemné světlejší pozadí, zaoblené rohy */
+    .menu-item-active {
+        background-color: #f3f4f6 !important; /* Gray 100 */
+        font-weight: 600 !important; 
+        color: #1f2937 !important; 
+        border-radius: 0.375rem !important; /* Mírné zaoblení pro položku menu */
+    }
+  </style>
+</head>
+<body class="font-sans bg-gray-50 antialiased h-screen overflow-hidden text-note-text">
+
+  <!-- Hlavní kontejner aplikace -->
+  <div class="flex flex-col h-full lg:m-4 lg:shadow-2xl lg:rounded-lg overflow-hidden">
+
+    <!-- Horní lišta (Topbar) - Tmavá, zaoblená nahoře -->
+    <header class="bg-note-topbar text-white z-20 sticky top-0 lg:rounded-t-lg">
+      <div class="flex justify-between items-center px-4 py-3">
+        <h1 class="text-xl font-bold tracking-tight">
+          Simplenote
+        </h1>
+        <!-- Tlačítko pro přepínání menu na mobilu -->
+        <button id="menu-toggle" class="lg:hidden p-2 rounded-lg hover:bg-gray-700 transition duration-150 ease-in-out text-white">
+          <!-- Ikonka menu (SVG) -->
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Hlavní layout (Sidebar + Content) -->
+    <main class="flex flex-grow overflow-hidden bg-white">
+
+      <!-- Postranní panel (Sidebar) - Bílé, zaoblené, se stínem na mobilu -->
+      <aside id="sidebar" class="fixed inset-y-0 left-0 z-10 w-64 bg-white border-r border-gray-200 transition-transform duration-300 ease-in-out transform -translate-x-full lg:translate-x-0 lg:relative lg:w-64 flex flex-col custom-scrollbar overflow-y-auto lg:shadow-md">
+        
+        <!-- Nadpis Poznámky -->
+        <div class="p-4 border-b border-gray-100">
+          <h2 class="text-lg font-semibold text-gray-700">Poznámky</h2>
+        </div>
+
+        <nav class="flex-grow p-3 space-y-0">
+          <ul id="menu" class="space-y-1">
+            <!-- Položky menu budou vloženy pomocí JS -->
+          </ul>
+        </nav>
+      </aside>
+
+      <!-- Overlay na mobilu (pro zavření menu) -->
+      <div id="sidebar-overlay" class="fixed inset-0 bg-black opacity-0 z-[5] transition-opacity duration-300 pointer-events-none lg:hidden"></div>
+
+      <!-- Obsahová sekce (Content) - Klíčová změna: overflow-y-auto zde -->
+      <section class="flex-1 overflow-y-auto p-4 lg:p-6 custom-scrollbar">
+        <!-- Obsahová karta - Důležité: 'h-full' a 'overflow-y-auto' odstraněno z článku, aby se roztáhl dle obsahu -->
+        <article id="article-content" class="bg-white p-6 md:p-10 rounded-lg shadow-lg max-w-4xl mx-auto prose-content">
+          <!-- Obsah článku (načtený Markdown) -->
+          <h2 class="text-2xl font-bold text-gray-800">Vyberte poznámku…</h2>
+          <p class="text-gray-500 mt-4">Seznam poznámek se načítá z adresáře <code>docs</code> ve vašem GitHub repozitáři.</p>
+        </article>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Hlavní JS logika -->
+  <script>
+    // === Konfigurace GitHub repozitáře ===
+    const GITHUB_USER = "RuzickaHub";
+    const GITHUB_REPO = "simple-note";
+    const MD_FOLDER = "docs";
+
+    const menuEl = document.getElementById("menu");
+    const contentEl = document.getElementById("article-content");
+    const sidebarEl = document.getElementById("sidebar");
+    const toggleButton = document.getElementById("menu-toggle");
+    const overlayEl = document.getElementById("sidebar-overlay");
+    const mainContentEl = document.querySelector('main > section');
+
+    // --- Logika Sidebar Toggle pro mobilní zařízení ---
+    function isSidebarOpen() {
+        return !sidebarEl.classList.contains('-translate-x-full');
+    }
+
+    function toggleSidebar() {
+        sidebarEl.classList.toggle('-translate-x-full');
+        overlayEl.classList.toggle('opacity-0');
+        overlayEl.classList.toggle('opacity-50');
+        overlayEl.classList.toggle('pointer-events-none');
+    }
+
+    // Nastavení event listenerů
+    toggleButton.addEventListener('click', toggleSidebar);
+    overlayEl.addEventListener('click', toggleSidebar);
+
+    // --- Logika Fetch pro GitHub API (s backoffem) ---
+
+    // Funkce pro fetch s exponenciálním backoffem
+    async function fetchWithRetry(url, options = {}, retries = 3, delay = 1000) {
+      for (let i = 0; i < retries; i++) {
+        try {
+          const response = await fetch(url, options);
+          if (!response.ok) {
+            // Kontrola pro API limit nebo Not Found
+            throw new Error(`GitHub API error: ${response.statusText} (Status: ${response.status})`);
+          }
+          return response;
+        } catch (error) {
+          if (i < retries - 1) {
+            await new Promise(resolve => setTimeout(resolve, delay));
+            delay *= 2; // Exponenciální backoff
+          } else {
+            console.error("Failed to fetch after multiple retries:", error);
+            throw error;
+          }
+        }
+      }
+      throw new Error("Exhausted all retries.");
+    }
+
+    // Načtení seznamu .md souborů
+    async function loadFileList(){
+      const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${MD_FOLDER}`;
+      // Zobrazí loading stav
+      menuEl.innerHTML = '<li class="text-gray-500 p-2 text-xs">Načítání poznámek...</li>';
+      contentEl.innerHTML = '<h2 class="text-2xl font-bold text-gray-800">Načítání...</h2><p class="text-gray-500 mt-4">Získávání seznamu souborů z GitHubu.</p>';
+
+      try {
+        const res = await fetchWithRetry(url);
+        const data = await res.json();
+      
+        menuEl.innerHTML = ''; 
+
+        if (Array.isArray(data)) {
+          const mdFiles = data.filter(f => f.name.endsWith(".md"));
+
+          mdFiles.forEach(file => {
+            const li = document.createElement("li");
+            
+            // Základní styl pro li (zaoblený hover)
+            li.className = 'text-gray-700 hover:bg-note-active rounded-md transition duration-150 ease-in-out';
+
+            const a = document.createElement("a");
+            a.href = "#";
+            const fileName = decodeURIComponent(file.name.replace(".md", ""));
+            a.textContent = fileName;
+            // Tailwind třídy pro odkaz/tlačítko
+            a.className = 'block w-full p-2 text-sm truncate rounded-md';
+            
+            a.onclick = (e) => {
+              e.preventDefault();
+              // Odstraní třídu 'active' ze všech
+              document.querySelectorAll('#menu a.menu-item-active').forEach(el => {
+                el.classList.remove('menu-item-active');
+              });
+              
+              // Přidá třídu 'active' na kliknutý prvek
+              a.classList.add('menu-item-active');
+
+              loadMarkdown(file.download_url, fileName);
+              // Zavře sidebar na mobilu po kliknutí
+              if (window.innerWidth < 1024) {
+                 toggleSidebar();
+              }
+            };
+
+            li.appendChild(a);
+            menuEl.appendChild(li);
+          });
+
+          if (mdFiles.length > 0) {
+            // Automaticky načte první článek a nastaví mu aktivní styl
+            const firstFile = mdFiles[0];
+            const firstLink = menuEl.querySelector('li:first-child a');
+            if (firstLink) {
+                 firstLink.classList.add('menu-item-active');
+            }
+            loadMarkdown(firstFile.download_url, decodeURIComponent(firstFile.name.replace(".md", "")));
+          } else {
+            contentEl.innerHTML = '<h2 class="text-2xl font-bold text-gray-800">Žádné poznámky nenalezeny.</h2><p class="text-gray-500 mt-4">V repozitáři <code>' + GITHUB_USER + '/' + GITHUB_REPO + '/' + MD_FOLDER + '</code> nebyly nalezeny žádné soubory s příponou .md.</p>';
+          }
+
+        } else if (data.message && data.message.includes("Not Found")) {
+            contentEl.innerHTML = `<h2 class="text-2xl font-bold text-red-600">Chyba: Adresář ${MD_FOLDER} nenalezen.</h2><p class="text-gray-500 mt-4">Zkontrolujte, zda existuje repozitář <code>${GITHUB_USER}/${GITHUB_REPO}</code> a správná cesta <code>${MD_FOLDER}</code>.</p>`;
+        } else if (data.message && data.message.includes("API rate limit exceeded")) {
+             contentEl.innerHTML = `<h2 class="text-2xl font-bold text-red-600">Chyba: Limit GitHub API překročen.</h2><p class="text-gray-500 mt-4">Zkuste to prosím později, nebo zkontrolujte stav API.</p>`;
+        } else {
+            contentEl.innerHTML = '<h2 class="text-2xl font-bold text-red-600">Nastala neočekávaná chyba při načítání seznamu.</h2>';
+        }
+
+      } catch (error) {
+        console.error("Nastala chyba při načítání seznamu souborů:", error);
+        contentEl.innerHTML = '<h2 class="text-2xl font-bold text-red-600">Nastala chyba při komunikaci s GitHub API.</h2><p class="text-gray-500 mt-4">Zkontrolujte připojení nebo limity GitHub API.</p>';
+      }
+    }
+
+    // Načtení a vykreslení Markdownu
+    async function loadMarkdown(url, title = 'Poznámka'){
+      
+      contentEl.innerHTML = '<h2 class="text-2xl font-bold text-gray-800">Načítání poznámky...</h2><p class="text-gray-500 mt-4">Stahování ' + title + '...</p>';
+      
+      try {
+        const res = await fetchWithRetry(url);
+        const txt = await res.text();
+        
+        // Nastaví titulek stránky
+        document.title = `Simplenote — ${title}`;
+        
+        // Vykreslí Markdown obsah
+        contentEl.innerHTML = marked.parse(txt);
+        // Po načtení a vykreslení přejde nahoru
+        mainContentEl.scrollTop = 0; 
+      } catch (error) {
+        console.error("Nastala chyba při načítání Markdownu:", error);
+        contentEl.innerHTML = `<h2 class="text-2xl font-bold text-red-600">Chyba při načítání poznámky: ${title}</h2><p class="text-gray-500 mt-4">Nebylo možné stáhnout obsah.</p>`;
+      }
+    }
+
+    // Spuštění aplikace po načtení DOM
+    window.onload = loadFileList;
+  </script>
+</body>
+</html>
+
+
