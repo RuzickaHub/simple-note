@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Simplenote — strom souborů (hierarchie)</title>
+
+  <!-- Inter font -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root{
+      --bg: #f7fafc;
+      --panel: #ffffff;
+      --muted: #6b7280;
+      --text: #0f172a;
+      --accent: #2563eb;
+      --accent-weak: rgba(37,99,235,0.09);
+      --radius: 12px;
+      --active-bg: #e6f0ff;
+      --active-text: #073763;
+      --file-icon: #374151;
+    }
+    :root[data-theme="dark"]{
+      --bg: #071128;
+      --panel: #071824;
+      --muted: #9ca3af;
+      --text: #e6eef8;
+      --accent: #60a5fa;
+      --accent-weak: rgba(96,165,250,0.09);
+      --active-bg: #0b2a47;
+      --active-text: #bfe0ff;
+      --file-icon: #cbd5e1;
+    }
+
+    html{ font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; font-size:100%; background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; height:100%; }
+    body{ margin:0; min-height:100vh; display:flex; align-items:stretch; padding:16px; box-sizing:border-box; background:var(--bg); color:var(--text); }
+
+    /* Shell */
+    .app {
+      width:100%;
+      max-width:1200px;
+      margin:0 auto;
+      display:grid;
+      grid-template-columns: 18rem 1fr;
+      gap:20px;
+      align-items:start;
+    }
+
+    @media (max-width: 900px){
+      .app{ grid-template-columns: 1fr; }
+      .sidebar{ position:fixed; left:0; top:12px; bottom:12px; transform: translateX(-120%); transition: transform .22s ease; z-index:60; width:85%; }
+      .sidebar.open{ transform: translateX(0); }
+      .overlay{ position:fixed; inset:0; background: rgba(2,6,23,0.5); z-index:50; opacity:0; pointer-events:none; transition:opacity .2s; }
+      .overlay.show{ opacity:1; pointer-events:auto; }
+    }
+
+    /* Sidebar */
+    .sidebar {
+      background: var(--panel);
+      border-radius: var(--radius);
+      padding:12px;
+      box-shadow: 0 10px 30px rgba(2,6,23,0.06);
+      max-height: calc(100vh - 32px);
+      overflow:auto;
+      border:1px solid rgba(0,0,0,0.04);
+    }
+
+    .sidebar .meta { display:flex; gap:8px; align-items:center; justify-content:space-between; margin-bottom:8px; }
+    .sidebar h3 { margin:0; font-size:0.95rem; font-weight:600; }
+    .sidebar p { margin:0; font-size:0.78rem; color:var(--muted); }
+
+    /* Tree */
+    .tree { list-style:none; padding-left:0; margin:0; font-size:0.92rem; }
+    .tree li { margin:2px 0; }
+
+    .tree-item {
+      display:flex; align-items:center; gap:8px;
+      padding:6px 8px; border-radius:8px; cursor:pointer;
+      transition: background .14s, transform .08s;
+      user-select:none;
+    }
+    .tree-item:hover{ background: var(--accent-weak); transform: translateY(-1px); }
+    .tree-item .label { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+    .tree-children { margin-left: 12px; margin-top:4px; padding-left:8px; border-left:1px solid rgba(0,0,0,0.04); }
+    :root[data-theme="dark"] .tree-children { border-left-color: rgba(255,255,255,0.03); }
+
+    /* Icons */
+    .icon { width:16px; height:16px; display:inline-block; flex:0 0 16px; }
+    .icon svg { width:100%; height:100%; display:block; }
+
+    /* Active file highlight */
+    .active {
+      background: var(--active-bg) !important;
+      color: var(--active-text) !important;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.02);
+    }
+
+    /* Content */
+    .content {
+      background: var(--panel);
+      border-radius: var(--radius);
+      padding:20px;
+      box-shadow: 0 10px 30px rgba(2,6,23,0.06);
+      min-height: calc(100vh - 64px);
+      max-height: calc(100vh - 32px);
+      overflow:auto;
+      border:1px solid rgba(0,0,0,0.04);
+    }
+    .content h1,h2,h3{ margin-top:1.2rem; margin-bottom:.4rem; }
+    .muted { color:var(--muted); font-size:0.94rem; }
+
+    /* Top controls */
+    .controls { display:flex; gap:10px; align-items:center; }
+    .btn {
+      padding:6px 10px; border-radius:8px; border:0; cursor:pointer; background:transparent; display:inline-flex; align-items:center; gap:8px;
+    }
+    .btn:hover{ background: rgba(0,0,0,0.03); }
+
+    /* small responsive tweaks */
+    @media (max-width:600px){ .sidebar { padding:10px; } .content { padding:14px; } }
+  </style>
+</head>
+<body>
+  <div class="app" role="application" aria-label="Simplenote">
+    <!-- Sidebar / Tree -->
+    <aside class="sidebar" id="sidebar" aria-label="Seznam poznámek">
+      <div class="meta">
+        <div>
+          <h3>Simplenote</h3>
+          <p class="muted">Hierarchie souborů — docs/</p>
+        </div>
+        <div class="controls">
+          <button id="open-sidebar-btn" class="btn" title="Otevřít menu (mobil)" aria-hidden="true">
+            <!-- menu icon -->
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <button id="theme-toggle" class="btn" title="Přepnout téma (t)" aria-pressed="false">
+            <span id="theme-icon" class="icon"></span>
+          </button>
+        </div>
+      </div>
+
+      <nav aria-label="Strom poznámek">
+        <ul id="tree-root" class="tree" role="tree">
+          <li class="muted">Načítání stromu…</li>
+        </ul>
+      </nav>
+    </aside>
+
+    <div class="overlay" id="overlay"></div>
+
+    <!-- Content area -->
+    <main class="content" id="content" tabindex="0" role="main" aria-live="polite">
+      <h2>Vyberte soubor</h2>
+      <p class="muted">Obsah se načte sem po kliknutí na soubor.</p>
+    </main>
+  </div>
+
+<script>
+/* ======================
+   Konfigurace (uprav dle potřeby)
+   ====================== */
+const GITHUB_USER = "RuzickaHub";
+const GITHUB_REPO = "simple-note";
+const MD_FOLDER = "docs";
+
+/* ======================
+   Minimal SVG ikonky (ultra-minimal)
+   ====================== */
+const ICONS = {
+  folderClosed: function(color){
+    return `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h3.5l1 1h7a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 16.5 17H4.5A1.5 1.5 0 0 1 3 15.5v-8z" fill="${color}" />
+    </svg>`;
+  },
+  folderOpen: function(color){
+    return `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h4l1.5 1.5H19A1.5 1.5 0 0 1 20.5 10v5.5A1.5 1.5 0 0 1 19 17H4.5A1.5 1.5 0 0 1 3 15.5V8.5z" fill="${color}" />
+    </svg>`;
+  },
+  file: function(color){
+    return `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M6 2h7l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" fill="${color}" />
+    </svg>`;
+  },
+  chevron: function(color){
+    return `<svg viewBox="0 0 24 24" fill="none"><path d="M8 9l4 4 4-4" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  },
+  moon: `<svg viewBox="0 0 24 24" fill="none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor"/></svg>`,
+  sun: `<svg viewBox="0 0 24 24" fill="none"><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>`
+};
+
+/* ======================
+   Theme handling
+   ====================== */
+const THEME_LS = 'simplenote:theme';
+const themeToggleBtn = document.getElementById('theme-toggle');
+const themeIconWrap = document.getElementById('theme-icon');
+
+function applyTheme(theme){
+  document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
+  themeToggleBtn.setAttribute('aria-pressed', theme === 'dark');
+  // update icon (sun for light, moon for dark)
+  themeIconWrap.innerHTML = theme === 'dark' ? ICONS.sun : ICONS.moon;
+}
+
+function readSystemPrefersDark(){
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+function initTheme(){
+  const stored = localStorage.getItem(THEME_LS);
+  if(stored) applyTheme(stored);
+  else applyTheme(readSystemPrefersDark() ? 'dark' : 'light');
+
+  themeToggleBtn.addEventListener('click', toggleTheme);
+  document.addEventListener('keydown', (e) => { if(e.key.toLowerCase() === 't') toggleTheme(); });
+}
+
+function toggleTheme(){
+  const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  const next = current === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  localStorage.setItem(THEME_LS, next);
+}
+
+/* ======================
+   Mobile sidebar
+   ====================== */
+const sidebar = document.getElementById('sidebar');
+const overlay = document.getElementById('overlay');
+document.getElementById('open-sidebar-btn').addEventListener('click', ()=> sidebar.classList.add('open') );
+overlay.addEventListener('click', ()=> sidebar.classList.remove('open') );
+
+/* ======================
+   Helpers: fetch with retry
+   ====================== */
+async function fetchWithRetry(url, options={}, retries=3, delay=700){
+  for(let i=0;i<retries;i++){
+    try{
+      const res = await fetch(url, options);
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res;
+    }catch(err){
+      if(i < retries - 1) await new Promise(r => setTimeout(r, delay*(2**i)));
+      else throw err;
+    }
+  }
+}
+
+/* ======================
+   Detect default branch (main/master) for raw URL
+   ====================== */
+async function getDefaultBranch(){
+  try{
+    const api = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}`;
+    const res = await fetchWithRetry(api);
+    const info = await res.json();
+    return info.default_branch || 'main';
+  }catch(e){
+    console.warn('Nepodařilo se zjistit default branch, použiji "main".', e);
+    return 'main';
+  }
+}
+
+/* ======================
+   Recursive loader using GitHub Contents API
+   Produces a tree: { name, path, children: [...], file: true? }
+   ====================== */
+async function fetchFolderContents(path){
+  const api = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
+  const res = await fetchWithRetry(api);
+  return await res.json();
+}
+
+async function buildTree(path = MD_FOLDER){
+  const nodeName = path.split('/').pop() || path;
+  const node = { name: nodeName, path, children: [] };
+
+  try{
+    const items = await fetchFolderContents(path);
+    if(!Array.isArray(items)) return node;
+
+    items.sort((a,b) => {
+      if(a.type === b.type) return a.name.localeCompare(b.name, undefined, {sensitivity:'base'});
+      return a.type === 'dir' ? -1 : 1;
+    });
+
+    for(const it of items){
+      if(it.type === 'dir'){
+        const child = await buildTree(it.path);
+        node.children.push(child);
+      } else if(it.type === 'file' && it.name.toLowerCase().endsWith('.md')){
+        node.children.push({ name: it.name.replace(/\.md$/i,''), path: it.path, file: true });
+      }
+    }
+  }catch(err){
+    console.error('Chyba při buildTree', err);
+  }
+  return node;
+}
+
+/* ======================
+   Render tree to DOM with icons, fold/unfold
+   ====================== */
+const treeRoot = document.getElementById('tree-root');
+let DEFAULT_BRANCH = 'main';
+let activePath = null;
+
+function clearTree(){
+  treeRoot.innerHTML = '';
+}
+
+function createTreeItem(node, depth=0){
+  const li = document.createElement('li');
+  li.setAttribute('role','treeitem');
+
+  const row = document.createElement('div');
+  row.className = 'tree-item';
+  row.style.paddingLeft = (depth * 10 + 6) + 'px';
+
+  const iconWrap = document.createElement('span');
+  iconWrap.className = 'icon';
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = node.name;
+
+  if(node.file){
+    iconWrap.innerHTML = ICONS.file(getComputedStyle(document.documentElement).getPropertyValue('--file-icon').trim() || '#374151');
+    row.appendChild(iconWrap);
+    row.appendChild(label);
+
+    row.addEventListener('click', async () => {
+      setActive(node.path, row);
+      await loadFileContent(node.path);
+    });
+
+    row.tabIndex = 0;
+    row.addEventListener('keydown', (e)=>{ if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.click(); } });
+
+    li.appendChild(row);
+    return li;
+  } else {
+    const chevron = document.createElement('span');
+    chevron.className = 'icon';
+    chevron.innerHTML = ICONS.chevron(getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || '#6b7280');
+
+    const folderIcon = document.createElement('span');
+    folderIcon.className = 'icon';
+    folderIcon.innerHTML = ICONS.folderClosed(getComputedStyle(document.documentElement).getPropertyValue('--file-icon').trim() || '#374151');
+
+    row.appendChild(chevron);
+    row.appendChild(folderIcon);
+    row.appendChild(label);
+
+    let open = false;
+    const childrenUl = document.createElement('ul');
+    childrenUl.className = 'tree-children';
+    childrenUl.style.display = 'none';
+
+    row.addEventListener('click', (e)=>{
+      open = !open;
+      childrenUl.style.display = open ? 'block' : 'none';
+      folderIcon.innerHTML = open ? ICONS.folderOpen(getComputedStyle(document.documentElement).getPropertyValue('--file-icon').trim() || '#374151') : ICONS.folderClosed(getComputedStyle(document.documentElement).getPropertyValue('--file-icon').trim() || '#374151');
+      chevron.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+      chevron.style.transition = 'transform .18s ease';
+    });
+
+    row.tabIndex = 0;
+    row.addEventListener('keydown', (e)=>{
+      if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.click(); }
+      if(e.key === 'ArrowRight' && !open){ row.click(); }
+      if(e.key === 'ArrowLeft' && open){ row.click(); }
+    });
+
+    li.appendChild(row);
+    li.appendChild(childrenUl);
+
+    for(const c of node.children){
+      const childLi = createTreeItem(c, depth + 1);
+      childrenUl.appendChild(childLi);
+    }
+    return li;
+  }
+}
+
+function setActive(path, element){
+  const prev = treeRoot.querySelector('.active');
+  if(prev) prev.classList.remove('active');
+  if(element) element.classList.add('active');
+  activePath = path;
+  if(element) element.scrollIntoView({block:'center', behavior:'smooth'});
+}
+
+/* ======================
+   Load file content via raw.githubusercontent (detect branch)
+   ====================== */
+async function loadFileContent(path){
+  try{
+    const rawUrl = `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/${DEFAULT_BRANCH}/${path}`;
+    const res = await fetchWithRetry(rawUrl);
+    const md = await res.text();
+    renderMarkdown(md, path);
+  }catch(err){
+    console.error('Chyba při načítání souboru', err);
+    document.getElementById('content').innerHTML = `<h3>Chyba při načítání souboru</h3><p class="muted">${err.message}</p>`;
+  }
+}
+
+/* ======================
+   Simple markdown render (lightweight)
+   ====================== */
+function escapeHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function renderMarkdown(md, path){
+  const lines = md.split('\n');
+  let html = '';
+  let inCode = false;
+  let codeLang = '';
+  for(let i=0;i<lines.length;i++){
+    const l = lines[i];
+    if(l.startsWith('```')){
+      if(!inCode){
+        inCode = true;
+        codeLang = l.slice(3).trim();
+        html += `<pre><code data-lang="${escapeHtml(codeLang)}">`;
+      } else {
+        inCode = false;
+        html += `</code></pre>`;
+      }
+      continue;
+    }
+    if(inCode){
+      html += escapeHtml(l) + '\n';
+      continue;
+    }
+    if(/^#{1,6}\s+/.test(l)){
+      const m = l.match(/^(#{1,6})\s+(.*)/);
+      const level = m[1].length;
+      html += `<h${level}>${escapeHtml(m[2])}</h${level}>`;
+      continue;
+    }
+    if(/^\s*-\s+/.test(l)){
+      let j = i;
+      let block = '';
+      while(j < lines.length && /^\s*-\s+/.test(lines[j])){
+        block += `<li>${escapeHtml(lines[j].replace(/^\s*-\s+/,''))}</li>`;
+        j++;
+      }
+      html += `<ul>${block}</ul>`;
+      i = j-1;
+      continue;
+    }
+    if(l.trim() === '') { html += '<p></p>'; continue; }
+    const converted = escapeHtml(l).replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    html += `<p>${converted}</p>`;
+  }
+
+  const title = path.split('/').pop();
+  document.getElementById('content').innerHTML = `<h2 style="margin-top:0">${escapeHtml(title)}</h2>` + `<div class="md-body">${html}</div>`;
+}
+
+/* ======================
+   Bootstrap: build and render
+   ====================== */
+async function initTree(){
+  try{
+    DEFAULT_BRANCH = await getDefaultBranch();
+    clearTree();
+    treeRoot.innerHTML = `<li class="muted">Načítám strukturu z ${GITHUB_USER}/${GITHUB_REPO} (branch: ${DEFAULT_BRANCH}) …</li>`;
+    const tree = await buildTree(MD_FOLDER);
+    clearTree();
+    const toRender = (tree.name === MD_FOLDER || tree.children.length === 0) ? tree.children : [tree];
+    for(const n of toRender){
+      const li = createTreeItem(n, 0);
+      treeRoot.appendChild(li);
+    }
+  }catch(err){
+    console.error('initTree error', err);
+    treeRoot.innerHTML = `<li class="muted">Nepodařilo se načíst strom: ${err.message}</li>`;
+  }
+}
+
+/* ======================
+   Init theme + tree
+   ====================== */
+initTheme();
+initTree();
+</script>
+</body>
+</html>
