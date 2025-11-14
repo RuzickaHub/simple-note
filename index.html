@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Simplenote v3 — Moderní Design</title>
+
+  <!-- Inter font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Tailwind (CDN) + Marked -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <meta name="color-scheme" content="light dark">
+
+  <style>
+    :root{
+      --bg: #f8fafc;           /* light bg */
+      --panel: #ffffff;        /* cards */
+      --muted: #6b7280;        /* gray-500 */
+      --text: #0f172a;         /* gray-900 */
+      --accent: #2563eb;       /* blue-600 */
+      --code-bg: #1f2937;     /* dark for code blocks */
+      --scale: 1;             /* UI scale */
+      --radius: 12px;
+    }
+
+    /* dark theme variables */
+    :root[data-theme="dark"]{
+      --bg: #0b1220;
+      --panel: #0f1724;
+      --muted: #9ca3af;
+      --text: #e6eef8;
+      --accent: #60a5fa;
+      --code-bg: #0b1220;
+    }
+
+    html{
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      font-size: 100%; /* will be adjusted by JS scaling */
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      background-color: var(--bg);
+      color: var(--text);
+    }
+
+    /* Container look */
+    .app-shell{
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      padding: 0.5rem;
+    }
+
+    header.topbar{
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+      backdrop-filter: blur(6px);
+      border-radius: calc(var(--radius) - 4px);
+    }
+
+    /* Sidebar */
+    aside.sidebar{
+      width: 16rem;
+      max-width: 80%;
+      background: var(--panel);
+      border: 1px solid rgba(30,41,59,0.04);
+      border-radius: var(--radius);
+      box-shadow: 0 6px 20px rgba(2,6,23,0.07);
+      overflow: auto;
+    }
+
+    /* Content card */
+    article.content-card{
+      background: var(--panel);
+      border-radius: var(--radius);
+      box-shadow: 0 10px 30px rgba(2,6,23,0.06);
+      padding: 1.25rem;
+    }
+
+    /* Prose / markdown */
+    .prose-content h1, .prose-content h2, .prose-content h3 {
+      color: var(--text);
+      margin-top: 1.2em;
+      margin-bottom: 0.35em;
+      line-height: 1.2;
+      font-weight: 700;
+    }
+    .prose-content p { color: var(--muted); line-height:1.7; margin-bottom:0.9em; }
+    .prose-content a { color: var(--accent); text-decoration: none; }
+    .prose-content pre {
+      background: var(--code-bg);
+      color: #e6eef8;
+      padding: 0.9rem;
+      border-radius: 0.6rem;
+      overflow: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace;
+      font-size: 0.9rem;
+    }
+    .prose-content code { background: rgba(0,0,0,0.04); padding:0.12rem 0.3rem; border-radius: 6px; font-size:0.9rem; }
+
+    /* Scrollbar (subtle) */
+    .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.18); border-radius:6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+
+    /* Active menu item */
+    .menu-item-active{
+      background: linear-gradient(90deg, rgba(37,99,235,0.08), transparent);
+      font-weight: 600;
+      color: var(--text) !important;
+      border-radius: 8px;
+    }
+
+    /* Respect reduced motion */
+    @media (prefers-reduced-motion: reduce){
+      * { transition: none !important; animation: none !important; }
+    }
+
+    /* small helpers */
+    .icon-btn{ display:inline-flex; align-items:center; justify-content:center; gap:.5rem; padding:.4rem .6rem; border-radius:8px; background:transparent; border:0; cursor:pointer; }
+    .icon-btn:hover{ background: rgba(0,0,0,0.04); }
+
+    /* responsive layout */
+    @media(min-width:1024px){
+      main.layout { display:flex; gap:1rem; align-items:stretch; }
+      main.layout > section.content { flex:1; display:flex; align-items:flex-start; padding:1rem 0; overflow:auto; }
+    }
+    @media(max-width:1023px){
+      aside.sidebar{ position:fixed; left:0; top:4rem; bottom:1rem; transform: translateX(-110%); transition: transform .26s ease; z-index:60; width:80%; }
+      aside.sidebar.open{ transform: translateX(0); }
+      .sidebar-overlay{ position:fixed; inset:0; background:rgba(2,6,23,0.5); z-index:50; opacity:0; pointer-events:none; transition:opacity .22s ease; }
+      .sidebar-overlay.show{ opacity:1; pointer-events:auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+
+    <!-- Topbar -->
+    <header class="topbar p-3 flex items-center justify-between lg:justify-end gap-3">
+      <div class="flex items-center gap-3 lg:mr-auto">
+        <button id="menu-toggle" aria-controls="sidebar" aria-expanded="false" class="icon-btn lg:hidden" title="Otevřít menu">
+          <!-- menu icon -->
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+
+        <div class="flex flex-col leading-tight">
+          <span class="text-sm font-semibold">Simplenote</span>
+          <span class="text-xs" style="color:var(--muted)">Moderní minimalistická poznámková aplikace</span>
+        </div>
+      </div>
+
+      <!-- Controls: scale + theme -->
+      <div class="flex items-center gap-2">
+        <div class="flex items-center border rounded-md px-1 py-0.5" style="background:var(--panel)">
+          <button id="zoom-out" class="icon-btn" title="Zmenšit (Ctrl + -)">−</button>
+          <div id="scale-label" class="px-2 text-xs" style="min-width:2.5rem; text-align:center">100%</div>
+          <button id="zoom-in" class="icon-btn" title="Zvětšit (Ctrl + +)">+</button>
+        </div>
+
+        <button id="theme-toggle" class="icon-btn" title="Přepnout téma (t)">
+          <svg id="theme-icon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path id="theme-path" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1M12 20v1M4.2 4.2l.7.7M18.1 18.1l.7.7M1 12h1M22 12h1M4.2 19.8l.7-.7M18.1 5.9l.7-.7"/>
+            <circle cx="12" cy="12" r="3" stroke-width="2"></circle>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main layout -->
+    <main class="layout lg:items-start">
+      <!-- Sidebar -->
+      <aside id="sidebar" class="sidebar custom-scrollbar p-3 lg:relative" role="navigation" aria-label="Seznam poznámek">
+        <div class="mb-3 px-2">
+          <h3 class="text-sm font-semibold">Poznámky</h3>
+          <p class="text-xs" style="color:var(--muted)">Načítají se z <code>docs/</code> repozitáře</p>
+        </div>
+
+        <nav>
+          <ul id="menu" class="space-y-1">
+            <!-- menu items populated by JS -->
+            <li class="text-sm text-xs text-muted p-2" id="menu-loading">Načítání poznámek…</li>
+          </ul>
+        </nav>
+      </aside>
+
+      <!-- Sidebar overlay for mobile -->
+      <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+      <!-- Content -->
+      <section class="content p-3">
+        <article id="article-content" class="content-card prose-content custom-scrollbar max-w-4xl w-full">
+          <h2>Vyberte poznámku…</h2>
+          <p style="color:var(--muted)">Seznam poznámek se načítá z adresáře <code>docs</code> ve vašem GitHub repozitáři.</p>
+        </article>
+      </section>
+    </main>
+
+  </div>
+
+  <!-- Script: logic (theme, scale, sidebar, fetch) -->
+  <script>
+    /********** Konfigurace repo **********/
+    const GITHUB_USER = "RuzickaHub";
+    const GITHUB_REPO = "simple-note";
+    const MD_FOLDER = "docs";
+
+    /********** Elementy **********/
+    const menuEl = document.getElementById('menu');
+    const menuLoading = document.getElementById('menu-loading');
+    const contentEl = document.getElementById('article-content');
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    const menuToggle = document.getElementById('menu-toggle');
+    const zoomInBtn = document.getElementById('zoom-in');
+    const zoomOutBtn = document.getElementById('zoom-out');
+    const scaleLabel = document.getElementById('scale-label');
+    const themeToggle = document.getElementById('theme-toggle');
+
+    /********** THEME + SCALE (localStorage) **********/
+    const LS_THEME = 'simplenote:theme';
+    const LS_SCALE = 'simplenote:scale';
+
+    function applyTheme(theme){
+      document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
+      // update ARIA and icon (simple)
+      themeToggle.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
+    }
+
+    function readSystemPrefersDark(){
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+
+    function initTheme(){
+      const stored = localStorage.getItem(LS_THEME);
+      if(stored) applyTheme(stored);
+      else applyTheme(readSystemPrefersDark() ? 'dark' : 'light');
+
+      // toggle on click or 't' key
+      themeToggle.addEventListener('click', toggleTheme);
+      document.addEventListener('keydown', (e)=>{ if(e.key.toLowerCase()==='t') toggleTheme(); });
+    }
+
+    function toggleTheme(){
+      const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+      const next = current === 'dark' ? 'light' : 'dark';
+      applyTheme(next);
+      localStorage.setItem(LS_THEME, next);
+    }
+
+    // SCALE: we change root font-size in percent (100% default)
+    const defaultScale = 1; // 1 -> 100%
+    let scale = parseFloat(localStorage.getItem(LS_SCALE) || defaultScale);
+    function applyScale(){
+      const pct = Math.round(scale * 100);
+      document.documentElement.style.fontSize = (pct) + '%';
+      scaleLabel.textContent = pct + '%';
+    }
+    function setScale(v){
+      scale = Math.max(0.7, Math.min(1.6, v)); // clamp
+      localStorage.setItem(LS_SCALE, scale);
+      applyScale();
+    }
+    zoomInBtn.addEventListener('click', ()=> setScale(scale + 0.05));
+    zoomOutBtn.addEventListener('click', ()=> setScale(scale - 0.05));
+    // keyboard shortcuts: Ctrl/Cmd + + / - / 0
+    document.addEventListener('keydown', (e)=>{
+      const mod = e.ctrlKey || e.metaKey;
+      if(mod && (e.key === '+' || e.key === '=')){
+        e.preventDefault(); setScale(scale + 0.05);
+      } else if(mod && e.key === '-'){
+        e.preventDefault(); setScale(scale - 0.05);
+      } else if(mod && e.key === '0'){
+        e.preventDefault(); setScale(1);
+      }
+    });
+
+    /********** Sidebar mobile toggle **********/
+    function openSidebar(){ sidebar.classList.add('open'); overlay.classList.add('show'); menuToggle.setAttribute('aria-expanded','true'); }
+    function closeSidebar(){ sidebar.classList.remove('open'); overlay.classList.remove('show'); menuToggle.setAttribute('aria-expanded','false'); }
+    function toggleSidebar(){
+      if(sidebar.classList.contains('open')) closeSidebar(); else openSidebar();
+    }
+    menuToggle?.addEventListener('click', toggleSidebar);
+    overlay?.addEventListener('click', closeSidebar);
+    // close on escape
+    document.addEventListener('keydown', (e)=>{ if(e.key === 'Escape') closeSidebar(); });
+
+    /********** Fetch helpers (retry) **********/
+    async function fetchWithRetry(url, options={}, retries=3, delay=800){
+      for(let i=0;i<retries;i++){
+        try{
+          const res = await fetch(url, options);
+          if(!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res;
+        } catch(err){
+          if(i < retries-1) await new Promise(r=>setTimeout(r, delay*(2**i)));
+          else throw err;
+        }
+      }
+    }
+
+    /********** Load file list from GitHub (contents API) **********/
+    async function loadFileList(){
+      menuEl.innerHTML = '<li class="p-2 text-sm" style="color:var(--muted)">Načítání poznámek…</li>';
+      contentEl.innerHTML = `<h2>Načítání…</h2><p style="color:var(--muted)">Získávání seznamu souborů z GitHubu.</p>`;
+      const apiUrl = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${MD_FOLDER}`;
+      try{
+        const res = await fetchWithRetry(apiUrl);
+        const data = await res.json();
+
+        if(Array.isArray(data)){
+          const mdFiles = data.filter(f => f.name && f.name.toLowerCase().endsWith('.md'));
+          if(mdFiles.length === 0){
+            menuEl.innerHTML = '<li class="p-3 text-sm" style="color:var(--muted)">Žádné .md soubory v adresáři.</li>';
+            contentEl.innerHTML = `<h2>Žádné poznámky</h2><p style="color:var(--muted)">V repozitáři nebyly nalezeny soubory s příponou <code>.md</code>.</p>`;
+            return;
+          }
+
+          menuEl.innerHTML = '';
+          mdFiles.forEach((f, idx) => {
+            const name = decodeURIComponent(f.name.replace(/\.md$/i,''));
+            const li = document.createElement('li');
+            const a = document.createElement('a');
+            a.href = '#';
+            a.textContent = name;
+            a.className = 'block w-full p-2 text-sm truncate';
+            a.setAttribute('role','button');
+            a.tabIndex = 0;
+            a.addEventListener('click', (e)=>{
+              e.preventDefault();
+              menuEl.querySelectorAll('a').forEach(x => x.classList.remove('menu-item-active'));
+              a.classList.add('menu-item-active');
+              loadMarkdown(f.download_url, name);
+              if(window.innerWidth < 1024) closeSidebar();
+            });
+            a.addEventListener('keydown', (e)=>{ if(e.key==='Enter' || e.key===' ') a.click(); });
+
+            li.appendChild(a);
+            menuEl.appendChild(li);
+
+            // load first automatically
+            if(idx === 0){
+              a.classList.add('menu-item-active');
+              loadMarkdown(f.download_url, name);
+            }
+          });
+        } else if(data && data.message){
+          // helpful messages
+          contentEl.innerHTML = `<h2>Chyba při načítání: ${data.message}</h2><p style="color:var(--muted)">Zkontrolujte název repozitáře a cestu.</p>`;
+        } else {
+          contentEl.innerHTML = `<h2>Neočekávaná odpověď z GitHub API</h2>`;
+        }
+      } catch(err){
+        console.error(err);
+        contentEl.innerHTML = `<h2>Chyba komunikace s GitHub API</h2><p style="color:var(--muted)">${err.message}</p>`;
+        menuEl.innerHTML = '<li class="p-3 text-sm" style="color:var(--muted)">Chyba při načítání — zkontrolujte připojení.</li>';
+      }
+    }
+
+    /********** Load markdown and render via marked **********/
+    async function loadMarkdown(url, title='Poznámka'){
+      contentEl.innerHTML = `<h2>Načítání poznámky…</h2><p style="color:var(--muted)">Stahuji ${title}…</p>`;
+      try{
+        const res = await fetchWithRetry(url);
+        const txt = await res.text();
+        document.title = `Simplenote — ${title}`;
+        // parse and sanitize minimalně (marked nabízí možnost)
+        contentEl.innerHTML = marked.parse(txt || '');
+        // ensure scroll to top of content area
+        contentEl.parentElement.scrollTop = 0;
+      } catch(err){
+        console.error(err);
+        contentEl.innerHTML = `<h2>Chyba při načítání poznámky</h2><p style="color:var(--muted)">${err.message}</p>`;
+      }
+    }
+
+    /********** Init on load **********/
+    (function init(){
+      // theme + scale
+      initTheme();
+      applyScale();
+
+      // if local scale stored, apply
+      const storedScale = parseFloat(localStorage.getItem(LS_SCALE));
+      if(!isNaN(storedScale)) scale = storedScale;
+      applyScale();
+
+      // start loading files
+      loadFileList();
+
+      // Small accessibility improvement: focus first focusable element
+      setTimeout(()=> {
+        const first = document.querySelector('#menu a');
+        if(first) first.setAttribute('tabindex','0');
+      }, 300);
+    })();
+  </script>
+</body>
+</html>
