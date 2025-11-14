@@ -1,166 +1,186 @@
 <!DOCTYPE html>
-<html lang="cs">
+<html lang="cs" class="light">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Simple FS Viewer</title>
+  <title>Minimal FS Viewer</title>
   <style>
-    :root {
-      --bg: #fafafa;
-      --text: #111;
-      --sidebar-bg: #ffffff;
-      --highlight: #2563eb;
-    }
-    [data-theme="dark"] {
-      --bg: #0f0f0f;
-      --text: #f1f1f1;
-      --sidebar-bg: #181818;
-      --highlight: #3b82f6;
-    }
-
+    /* ---- Reset ---- */
+    * { margin:0; padding:0; box-sizing:border-box; }
     body {
-      margin: 0;
+      font-family: sans-serif;
+      display:grid;
+      grid-template-columns: 260px 1fr;
+      height:100vh;
       background: var(--bg);
       color: var(--text);
-      font-family: sans-serif;
-      display: grid;
-      grid-template-columns: 260px 1fr;
-      height: 100vh;
+      transition: background .25s, color .25s;
     }
 
-    .sidebar {
-      background: var(--sidebar-bg);
-      border-right: 1px solid #ccc2;
-      padding: 10px;
-      overflow-y: auto;
+    /* ---- Light / Dark ---- */
+    .light {
+      --bg:#ffffff;
+      --text:#222;
+      --sidebar-bg:#f6f6f6;
+      --active:#e0e0e0;
+    }
+    .dark {
+      --bg:#0f0f0f;
+      --text:#f1f1f1;
+      --sidebar-bg:#181818;
+      --active:#2a2a2a;
     }
 
-    .content {
-      padding: 20px;
-      overflow-y: auto;
+    /* ---- Sidebar ---- */
+    aside {
+      background:var(--sidebar-bg);
+      border-right:1px solid rgba(0,0,0,0.1);
+      overflow-y:auto;
+      padding:20px;
     }
 
-    .toggle-btn {
-      position: fixed;
-      top: 10px;
-      right: 10px;
-      background: var(--sidebar-bg);
-      color: var(--text);
-      padding: 6px 12px;
-      border-radius: 6px;
-      border: 1px solid #9993;
-      cursor: pointer;
+    .tree {
+      list-style:none;
+      font-size:14px;
+      user-select:none;
     }
 
     .tree-item {
-      cursor: pointer;
-      padding: 4px 6px;
-      border-radius: 6px;
-      display: flex;
-      gap: 6px;
-      align-items: center;
+      display:flex;
+      align-items:center;
+      gap:6px;
+      padding:4px 6px;
+      border-radius:6px;
+      cursor:pointer;
+      transition:background .15s;
     }
-
     .tree-item:hover {
-      background: #9991;
+      background:var(--active);
     }
-
     .active {
-      background: var(--highlight);
-      color: white !important;
+      background:var(--active);
+      font-weight:600;
     }
 
-    .indent {
-      margin-left: 18px;
+    .children {
+      margin-left:18px;
+      display:none;
+    }
+    .open > .children {
+      display:block;
     }
 
-    svg {
-      width: 14px;
-      height: 14px;
+    /* ---- SVG ikony ultra minimal ---- */
+    .icon { width:14px; height:14px; stroke:currentColor; }
+
+    /* ---- Obsah ---- */
+    main {
+      padding:30px;
+      overflow-y:auto;
     }
+
+    /* ---- Dark mode toggle ---- */
+    #modeToggle {
+      position:absolute;
+      bottom:20px;
+      left:20px;
+      padding:6px 12px;
+      border-radius:6px;
+      cursor:pointer;
+      background: var(--active);
+      border:none;
+      font-size:13px;
+    }
+
   </style>
 </head>
-<body data-theme="light">
 
-<button class="toggle-btn" onclick="toggleTheme()">Přepnout téma</button>
+<body>
 
-<div class="sidebar" id="tree"></div>
-<div class="content" id="content">Vyber soubor…</div>
+  <!----------- SIDEBAR ----------->
+  <aside>
+    <ul id="treeRoot" class="tree"></ul>
+    <button id="modeToggle">🌗 Přepnout</button>
+  </aside>
 
-<script>
-const apiBase = "https://raw.githubusercontent.com/RuzickaHub/simple-note/main/";
+  <!----------- OBSAH ----------->
+  <main id="content">Vyber soubor…</main>
 
-// Minimalistické SVG ikony
-const icons = {
-  folder: `<svg viewBox='0 0 24 24' fill='none' stroke='currentColor'><path d='M3 6h6l2 2h10v10H3z'/></svg>`,
-  file: `<svg viewBox='0 0 24 24' fill='none' stroke='currentColor'><path d='M6 4h9l3 3v13H6z'/></svg>`,
-};
+  <script>
+    /* ---- Minimalistické SVG ikonky ---- */
+    const ICON_FOLDER = `<svg class="icon" fill="none" stroke-width="2">
+      <path d="M2 5h4l2 2h10v10H2z"/>
+    </svg>`;
+    const ICON_FOLDER_OPEN = `<svg class="icon" fill="none" stroke-width="2">
+      <path d="M2 5h4l2 2h12v2l-2 8H2z"/>
+    </svg>`;
+    const ICON_FILE = `<svg class="icon" fill="none" stroke-width="2">
+      <path d="M4 2h10l4 4v12H4z"/>
+    </svg>`;
 
-async function loadFS(path = "") {
-  const res = await fetch(apiBase + path);
-  const text = await res.text();
-  const lines = text.split("\n");
+    /* ---- Načtení FS z GitHub RAW ---- */
+    const REPO = "RuzickaHub/simple-note";
+    const API = `https://api.github.com/repos/${REPO}/contents`;
 
-  const tree = {};
-
-  for (let line of lines) {
-    const match = line.match(/href=\"(.*?)\"/);
-    if (!match) continue;
-    const item = match[1];
-    const isFolder = item.endsWith("/");
-
-    const parts = item.split("/").filter(Boolean);
-    let curr = tree;
-    for (let i = 0; i < parts.length; i++) {
-      const p = parts[i];
-      if (!curr[p]) curr[p] = { _folder: i < parts.length - 1 || isFolder, _children: {} };
-      curr = curr[p]._children;
+    async function loadTree(path = "") {
+      const res = await fetch(`${API}/${path}`);
+      return await res.json();
     }
-  }
 
-  renderTree(tree, document.getElementById("tree"));
-}
+    async function renderTree(path = "", rootEl) {
+      const items = await loadTree(path);
 
-function renderTree(obj, container, indent = 0) {
-  container.innerHTML = "";
+      for (const item of items) {
+        const el = document.createElement("li");
+        el.className = "tree-item";
 
-  Object.keys(obj).forEach(key => {
-    const item = obj[key];
-    const div = document.createElement("div");
-    div.className = "tree-item";
-    div.style.marginLeft = indent + "px";
-    div.innerHTML = `${item._folder ? icons.folder : icons.file} ${key}`;
+        // FOLDER
+        if (item.type === "dir") {
+          el.innerHTML = ICON_FOLDER + item.name;
+          el.onclick = e => {
+            e.stopPropagation();
+            el.classList.toggle("open");
+            const icon = el.querySelector("svg");
+            icon.outerHTML = el.classList.contains("open") ? ICON_FOLDER_OPEN : ICON_FOLDER;
+          };
 
-    div.onclick = () => {
-      document.querySelectorAll('.tree-item').forEach(el => el.classList.remove('active'));
-      div.classList.add('active');
+          const children = document.createElement("ul");
+          children.className = "children";
+          el.appendChild(children);
 
-      if (!item._folder) loadFile(key);
+          renderTree(item.path, children);
+        }
+
+        // FILE
+        if (item.type === "file") {
+          el.innerHTML = ICON_FILE + item.name;
+          el.onclick = async e => {
+            e.stopPropagation();
+            setActive(el);
+            const raw = await fetch(item.download_url).then(r => r.text());
+            document.getElementById("content").textContent = raw;
+          };
+        }
+
+        rootEl.appendChild(el);
+      }
+    }
+
+    /* ---- Aktivní soubor highlight ---- */
+    function setActive(el) {
+      document.querySelectorAll(".tree-item").forEach(i => i.classList.remove("active"));
+      el.classList.add("active");
+    }
+
+    /* ---- Dark Mode ---- */
+    document.getElementById("modeToggle").onclick = () => {
+      const html = document.documentElement;
+      html.className = html.className === "light" ? "dark" : "light";
     };
 
-    container.appendChild(div);
+    /* ---- Inicializace ---- */
+    renderTree("", document.getElementById("treeRoot"));
 
-    if (item._folder) {
-      const childContainer = document.createElement("div");
-      container.appendChild(childContainer);
-      renderTree(item._children, childContainer, indent + 18);
-    }
-  });
-}
-
-async function loadFile(filename) {
-  const res = await fetch(apiBase + filename);
-  const text = await res.text();
-  document.getElementById("content").innerText = text;
-}
-
-function toggleTheme() {
-  const body = document.body;
-  body.dataset.theme = body.dataset.theme === "dark" ? "light" : "dark";
-}
-
-loadFS();
-</script>
+  </script>
 
 </body>
 </html>
