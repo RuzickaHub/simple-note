@@ -1,186 +1,406 @@
-<!DOCTYPE html>
-<html lang="cs" class="light">
+<!doctype html>
+<html lang="cs">
 <head>
-  <meta charset="UTF-8" />
-  <title>Minimal FS Viewer</title>
-  <style>
-    /* ---- Reset ---- */
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body {
-      font-family: sans-serif;
-      display:grid;
-      grid-template-columns: 260px 1fr;
-      height:100vh;
-      background: var(--bg);
-      color: var(--text);
-      transition: background .25s, color .25s;
-    }
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Simplenote — FS Tree (All-in-One)</title>
 
-    /* ---- Light / Dark ---- */
-    .light {
-      --bg:#ffffff;
-      --text:#222;
-      --sidebar-bg:#f6f6f6;
-      --active:#e0e0e0;
-    }
-    .dark {
-      --bg:#0f0f0f;
-      --text:#f1f1f1;
-      --sidebar-bg:#181818;
-      --active:#2a2a2a;
-    }
+<!-- Marked (markdown) + DOMPurify (sanitizace) -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script>
 
-    /* ---- Sidebar ---- */
-    aside {
-      background:var(--sidebar-bg);
-      border-right:1px solid rgba(0,0,0,0.1);
-      overflow-y:auto;
-      padding:20px;
-    }
+<style>
+  :root{
+    --sidebar-w: 300px;
+    --gap: 20px;
+    --radius: 12px;
+    --bg: #f7fafc;
+    --panel: #ffffff;
+    --muted: #6b7280;
+    --text: #0f172a;
+    --accent: #2563eb;
+    --accent-weak: rgba(37,99,235,0.09);
+    --active-bg: #e6f0ff;
+    --active-text: #073763;
+    --icon-color: #374151;
+    --indent-step: 18px;
+  }
+  :root[data-theme="dark"]{
+    --bg:#071128;
+    --panel:#071824;
+    --muted:#9ca3af;
+    --text:#e6eef8;
+    --accent:#60a5fa;
+    --accent-weak: rgba(96,165,250,0.07);
+    --active-bg:#0b2a47;
+    --active-text:#bfe0ff;
+    --icon-color:#cbd5e1;
+  }
 
-    .tree {
-      list-style:none;
-      font-size:14px;
-      user-select:none;
-    }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased}
+  /* Layout */
+  .wrap{
+    max-width:1400px;margin:18px auto;padding:0 var(--gap);display:grid;grid-template-columns:var(--sidebar-w) 1fr;gap:var(--gap);align-items:start;
+  }
+  @media (max-width:980px){
+    .wrap{grid-template-columns:1fr; padding:12px}
+    .sidebar{position:sticky;top:12px;z-index:10}
+    .controls-top{display:flex;gap:8px;justify-content:space-between;align-items:center;margin-bottom:8px}
+  }
 
-    .tree-item {
-      display:flex;
-      align-items:center;
-      gap:6px;
-      padding:4px 6px;
-      border-radius:6px;
-      cursor:pointer;
-      transition:background .15s;
-    }
-    .tree-item:hover {
-      background:var(--active);
-    }
-    .active {
-      background:var(--active);
-      font-weight:600;
-    }
+  /* Sidebar */
+  .sidebar{
+    background:var(--panel);border-radius:var(--radius);padding:12px;box-shadow:0 8px 30px rgba(2,6,23,0.06);max-height:calc(100vh - 36px);overflow:auto;border:1px solid rgba(0,0,0,0.04)
+  }
+  .sidebar .head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+  .sidebar h1{font-size:1rem;margin:0}
+  .sidebar p{margin:0;font-size:0.82rem;color:var(--muted)}
 
-    .children {
-      margin-left:18px;
-      display:none;
-    }
-    .open > .children {
-      display:block;
-    }
+  .controls{display:flex;gap:8px;align-items:center}
+  .btn{background:transparent;border:0;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:13px}
+  .btn:hover{background:var(--accent-weak)}
+  .search{width:100%;padding:7px 10px;border-radius:8px;border:1px solid rgba(0,0,0,0.06);background:transparent;color:var(--text)}
 
-    /* ---- SVG ikony ultra minimal ---- */
-    .icon { width:14px; height:14px; stroke:currentColor; }
+  /* Tree */
+  .tree{list-style:none;padding-left:0;margin:8px 0 16px 0;font-size:0.95rem}
+  .node{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;user-select:none}
+  .node:hover{background:var(--accent-weak)}
+  .node .label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .node .icon{width:16px;height:16px;flex:0 0 16px}
+  .children{margin-left: calc(var(--indent-step)); margin-top:4px;border-left:1px dashed rgba(0,0,0,0.03); padding-left:8px}
+  :root[data-theme="dark"] .children{border-left-color: rgba(255,255,255,0.03)}
 
-    /* ---- Obsah ---- */
-    main {
-      padding:30px;
-      overflow-y:auto;
-    }
+  .active{background:var(--active-bg);color:var(--active-text);font-weight:600}
 
-    /* ---- Dark mode toggle ---- */
-    #modeToggle {
-      position:absolute;
-      bottom:20px;
-      left:20px;
-      padding:6px 12px;
-      border-radius:6px;
-      cursor:pointer;
-      background: var(--active);
-      border:none;
-      font-size:13px;
-    }
+  /* Content */
+  .content{background:var(--panel);border-radius:var(--radius);padding:20px;box-shadow:0 10px 30px rgba(2,6,23,0.06);min-height:70vh;overflow:auto;border:1px solid rgba(0,0,0,0.04)}
+  .content h1,.content h2,.content h3{margin-top:1.1rem;margin-bottom:.4rem}
+  .muted{color:var(--muted)}
 
-  </style>
+  /* Misc */
+  .meta-small{font-size:12px;color:var(--muted)}
+  .kbd{display:inline-block;padding:.15rem .4rem;border-radius:6px;border:1px solid rgba(0,0,0,0.06);font-size:12px;background:transparent}
+</style>
 </head>
-
 <body>
 
-  <!----------- SIDEBAR ----------->
-  <aside>
-    <ul id="treeRoot" class="tree"></ul>
-    <button id="modeToggle">🌗 Přepnout</button>
+<div class="wrap" id="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="head">
+      <div>
+        <h1>Simplenote</h1>
+        <p class="muted">docs/ — strom poznámek</p>
+      </div>
+      <div class="controls">
+        <button class="btn" id="expandAll" title="Expand all">▸▸</button>
+        <button class="btn" id="collapseAll" title="Collapse all">◂◂</button>
+        <button class="btn" id="themeToggle" title="Přepnout téma">🌗</button>
+      </div>
+    </div>
+
+    <input id="search" class="search" placeholder="Hledat v názvech..." aria-label="Hledat v souborech"/>
+
+    <nav aria-label="Strom poznámek">
+      <ul id="treeRoot" class="tree" role="tree">
+        <li class="muted">Načítání stromu…</li>
+      </ul>
+    </nav>
+
+    <div class="meta-small">Klávesy: <span class="kbd">t</span> téma • <span class="kbd">/</span> hledat • Enter otevřít</div>
   </aside>
 
-  <!----------- OBSAH ----------->
-  <main id="content">Vyber soubor…</main>
+  <main class="content" id="content" tabindex="0" role="main" aria-live="polite">
+    <h2>Vyberte soubor</h2>
+    <p class="muted">Obsah Markdown se vykreslí sem.</p>
+  </main>
+</div>
 
-  <script>
-    /* ---- Minimalistické SVG ikonky ---- */
-    const ICON_FOLDER = `<svg class="icon" fill="none" stroke-width="2">
-      <path d="M2 5h4l2 2h10v10H2z"/>
-    </svg>`;
-    const ICON_FOLDER_OPEN = `<svg class="icon" fill="none" stroke-width="2">
-      <path d="M2 5h4l2 2h12v2l-2 8H2z"/>
-    </svg>`;
-    const ICON_FILE = `<svg class="icon" fill="none" stroke-width="2">
-      <path d="M4 2h10l4 4v12H4z"/>
-    </svg>`;
+<script>
+/* =======================
+   Konfigurace
+   ======================= */
+const GITHUB_USER = 'RuzickaHub';
+const GITHUB_REPO = 'simple-note';
+const MD_FOLDER = 'docs';
+const LS_THEME = 'simplenote:theme';
+const treeRoot = document.getElementById('treeRoot');
+const contentEl = document.getElementById('content');
+const searchInput = document.getElementById('search');
+const expandAllBtn = document.getElementById('expandAll');
+const collapseAllBtn = document.getElementById('collapseAll');
+const themeToggle = document.getElementById('themeToggle');
 
-    /* ---- Načtení FS z GitHub RAW ---- */
-    const REPO = "RuzickaHub/simple-note";
-    const API = `https://api.github.com/repos/${REPO}/contents`;
+let DEFAULT_BRANCH = 'main';
+let activeNode = null;
 
-    async function loadTree(path = "") {
-      const res = await fetch(`${API}/${path}`);
-      return await res.json();
+/* =======================
+   Ikony (ultra-minimal) — vrací string SVG
+   ======================= */
+const ICONS = {
+  folderClosed: color => `<svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h3.5l1 1h7a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 16.5 17H4.5A1.5 1.5 0 0 1 3 15.5v-8z" fill="${color}"/></svg>`,
+  folderOpen: color => `<svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h4l1.5 1.5H19A1.5 1.5 0 0 1 20.5 10v5.5A1.5 1.5 0 0 1 19 17H4.5A1.5 1.5 0 0 1 3 15.5V8.5z" fill="${color}"/></svg>`,
+  file: color => `<svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M6 2h7l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" fill="${color}"/></svg>`,
+  chevron: color => `<svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M8 9l4 4 4-4" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`
+};
+
+/* =======================
+   Helper: fetch s retry
+   ======================= */
+async function fetchWithRetry(url, opts={}, retries=3, delay=700){
+  for(let i=0;i<retries;i++){
+    try{
+      const r = await fetch(url, opts);
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r;
+    }catch(err){
+      if(i < retries-1) await new Promise(res => setTimeout(res, delay*(2**i)));
+      else throw err;
     }
+  }
+}
 
-    async function renderTree(path = "", rootEl) {
-      const items = await loadTree(path);
+/* =======================
+   zjistit default branch
+   ======================= */
+async function getDefaultBranch(){
+  try{
+    const api = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}`;
+    const res = await fetchWithRetry(api);
+    const info = await res.json();
+    return info.default_branch || 'main';
+  }catch(e){
+    console.warn('Default branch not detected, using main', e);
+    return 'main';
+  }
+}
 
-      for (const item of items) {
-        const el = document.createElement("li");
-        el.className = "tree-item";
+/* =======================
+   Rekurzivní načtení složek přes contents API
+   Vrátí node: { name, path, children[], file? }
+   ======================= */
+async function fetchFolder(path){
+  const api = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
+  const res = await fetchWithRetry(api);
+  return res.json();
+}
 
-        // FOLDER
-        if (item.type === "dir") {
-          el.innerHTML = ICON_FOLDER + item.name;
-          el.onclick = e => {
-            e.stopPropagation();
-            el.classList.toggle("open");
-            const icon = el.querySelector("svg");
-            icon.outerHTML = el.classList.contains("open") ? ICON_FOLDER_OPEN : ICON_FOLDER;
-          };
-
-          const children = document.createElement("ul");
-          children.className = "children";
-          el.appendChild(children);
-
-          renderTree(item.path, children);
-        }
-
-        // FILE
-        if (item.type === "file") {
-          el.innerHTML = ICON_FILE + item.name;
-          el.onclick = async e => {
-            e.stopPropagation();
-            setActive(el);
-            const raw = await fetch(item.download_url).then(r => r.text());
-            document.getElementById("content").textContent = raw;
-          };
-        }
-
-        rootEl.appendChild(el);
+async function buildTree(path = MD_FOLDER){
+  const name = path.split('/').pop() || path;
+  const node = { name, path, children: [] };
+  try{
+    const items = await fetchFolder(path);
+    if(!Array.isArray(items)) return node;
+    // sort dirs first
+    items.sort((a,b) => {
+      if(a.type === b.type) return a.name.localeCompare(b.name, undefined, {sensitivity:'base'});
+      return a.type === 'dir' ? -1 : 1;
+    });
+    for(const it of items){
+      if(it.type === 'dir'){
+        const child = await buildTree(it.path);
+        node.children.push(child);
+      } else if(it.type === 'file' && it.name.toLowerCase().endsWith('.md')){
+        node.children.push({ name: it.name.replace(/\.md$/i,''), path: it.path, file: true });
       }
     }
+  }catch(err){
+    console.error('buildTree error', err);
+  }
+  return node;
+}
 
-    /* ---- Aktivní soubor highlight ---- */
-    function setActive(el) {
-      document.querySelectorAll(".tree-item").forEach(i => i.classList.remove("active"));
-      el.classList.add("active");
-    }
+/* =======================
+   Render tree (creates DOM nodes with proper indentation, icons, toggles)
+   ======================= */
+function clearTree(){ treeRoot.innerHTML = ''; }
 
-    /* ---- Dark Mode ---- */
-    document.getElementById("modeToggle").onclick = () => {
-      const html = document.documentElement;
-      html.className = html.className === "light" ? "dark" : "light";
+function createNodeElement(node, depth = 0){
+  const li = document.createElement('li');
+  li.setAttribute('role','treeitem');
+  // row
+  const row = document.createElement('div');
+  row.className = 'node';
+  row.style.paddingLeft = `${depth * parseInt(getComputedStyle(document.documentElement).getPropertyValue('--indent-step')||18)}px`;
+
+  // icon
+  const iconWrap = document.createElement('span');
+  iconWrap.className = 'icon';
+  // label
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = node.name;
+
+  if(node.file){
+    // file node
+    iconWrap.innerHTML = ICONS.file(getComputedStyle(document.documentElement).getPropertyValue('--icon-color').trim() || '#374151');
+    row.appendChild(iconWrap);
+    row.appendChild(label);
+    row.tabIndex = 0;
+    row.addEventListener('click', async (e) => { e.stopPropagation(); activateNode(row, node.path); await loadMarkdown(node.path); });
+    row.addEventListener('keydown', (e)=> { if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.click(); } });
+    li.appendChild(row);
+    return li;
+  } else {
+    // folder node
+    const chevron = document.createElement('span'); chevron.className = 'icon';
+    chevron.innerHTML = ICONS.chevron(getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || '#6b7280');
+
+    iconWrap.innerHTML = ICONS.folderClosed(getComputedStyle(document.documentElement).getPropertyValue('--icon-color').trim() || '#374151');
+    row.appendChild(chevron); row.appendChild(iconWrap); row.appendChild(label);
+
+    // children container
+    const childrenUl = document.createElement('ul');
+    childrenUl.className = 'children';
+    childrenUl.style.display = 'none';
+
+    let open = false;
+    const toggle = (evt) => {
+      open = !open;
+      childrenUl.style.display = open ? 'block' : 'none';
+      iconWrap.innerHTML = open ? ICONS.folderOpen(getComputedStyle(document.documentElement).getPropertyValue('--icon-color').trim() || '#374151') : ICONS.folderClosed(getComputedStyle(document.documentElement).getPropertyValue('--icon-color').trim() || '#374151');
+      chevron.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+      chevron.style.transition = 'transform .18s ease';
     };
 
-    /* ---- Inicializace ---- */
-    renderTree("", document.getElementById("treeRoot"));
+    row.tabIndex = 0;
+    row.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
+    row.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+      if(e.key === 'ArrowRight' && !open) toggle();
+      if(e.key === 'ArrowLeft' && open) toggle();
+    });
 
-  </script>
+    // build children
+    for(const c of node.children){
+      const childEl = createNodeElement(c, depth + 1);
+      childrenUl.appendChild(childEl);
+    }
 
+    li.appendChild(row);
+    li.appendChild(childrenUl);
+    // expose actions
+    li._toggle = toggle;
+    li._open = () => { if(!open) toggle(); };
+    li._close = () => { if(open) toggle(); };
+    return li;
+  }
+}
+
+/* expand/collapse all */
+function setAll(open = true){
+  const lis = treeRoot.querySelectorAll('li');
+  lis.forEach(li => {
+    if(li._open && li._close){
+      if(open) li._open(); else li._close();
+    }
+  });
+}
+
+/* find node by path and activate + expand parents */
+function activateNode(el, path){
+  // remove previous
+  const prev = treeRoot.querySelector('.active');
+  if(prev) prev.classList.remove('active');
+  el.classList.add('active');
+  activeNode = path;
+  // scroll into view
+  el.scrollIntoView({block:'center', behavior:'smooth'});
+}
+
+/* =======================
+   Load markdown via raw URL (detect default branch first)
+   ======================= */
+async function loadMarkdown(path){
+  try{
+    const rawUrl = `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/${DEFAULT_BRANCH}/${path}`;
+    const res = await fetchWithRetry(rawUrl);
+    const txt = await res.text();
+    // render via marked + sanitize
+    const html = marked.parse(txt || '');
+    contentEl.innerHTML = DOMPurify.sanitize(`<h2 style="margin-top:0">${escapeHtml(path.split('/').pop())}</h2><div class="md-body">${html}</div>`);
+    // optional: syntax highlighting if you add library later
+  }catch(err){
+    console.error('loadMarkdown error', err);
+    contentEl.innerHTML = `<h3>Chyba načítání</h3><p class="muted">${escapeHtml(err.message)}</p>`;
+  }
+}
+
+/* simple escape for titles */
+function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+/* =======================
+   Search (filter tree by name)
+   ======================= */
+function filterTree(query){
+  query = String(query || '').trim().toLowerCase();
+  const items = treeRoot.querySelectorAll('li');
+  if(!query){ items.forEach(li=>li.style.display='list-item'); return; }
+  items.forEach(li=>{
+    const label = li.querySelector('.label');
+    if(!label) return;
+    const match = label.textContent.toLowerCase().includes(query);
+    // show if match OR any child matches
+    const childMatch = li.querySelector('ul') && li.querySelector('ul').innerText.toLowerCase().includes(query);
+    li.style.display = (match || childMatch) ? 'list-item' : 'none';
+  });
+}
+
+/* =======================
+   Build + render tree bootstrap
+   ======================= */
+async function init(){
+  DEFAULT_BRANCH = await getDefaultBranch();
+  treeRoot.innerHTML = `<li class="muted">Načítám strom z <strong>${GITHUB_USER}/${GITHUB_REPO}</strong> (branch: ${DEFAULT_BRANCH}) …</li>`;
+  try{
+    const root = await buildTree(MD_FOLDER);
+    clearTree();
+    // render children of top (if folder named docs, show its children directly)
+    const toRender = (root.name === MD_FOLDER || root.children.length === 0) ? root.children : [root];
+    for(const n of toRender){
+      const el = createNodeElement(n, 0);
+      treeRoot.appendChild(el);
+    }
+  }catch(err){
+    console.error('init error', err);
+    treeRoot.innerHTML = `<li class="muted">Chyba: ${escapeHtml(err.message)}</li>`;
+  }
+}
+
+/* =======================
+   Theme init / toggle
+   ======================= */
+function applyTheme(theme){
+  document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
+  localStorage.setItem(LS_THEME, theme);
+}
+function initTheme(){
+  const stored = localStorage.getItem(LS_THEME);
+  const prefer = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  applyTheme(stored || (prefer ? 'dark' : 'light'));
+}
+themeToggle.addEventListener('click', ()=> {
+  const cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
+});
+
+/* =======================
+   Events
+   ======================= */
+searchInput.addEventListener('input', (e)=> filterTree(e.target.value));
+expandAllBtn.addEventListener('click', ()=> setAll(true));
+collapseAllBtn.addEventListener('click', ()=> setAll(false));
+document.addEventListener('keydown', (e)=>{
+  if(e.key === 't') { e.preventDefault(); const cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'; applyTheme(cur === 'dark' ? 'light' : 'dark'); }
+  if(e.key === '/' && document.activeElement !== searchInput) { e.preventDefault(); searchInput.focus(); searchInput.select(); }
+});
+
+/* =======================
+   Kickoff
+   ======================= */
+initTheme();
+init();
+
+</script>
 </body>
 </html>
